@@ -1,0 +1,24 @@
+[package]
+name = "mpl3d-rs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "mpl3d_rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ndarray = "0.15.6"         # 类似NumPy的数组处理
+pyo3 = { version = "0.18.3", features = ["extension-module"] }  # Python绑定
+rayon = "1.7.0"            # 并行计算
+palette = "0.7.2"          # 颜色处理
+image = "0.24.6"           # 图像处理
+numpy = { version = "0.18.0" }  # NumPy绑定
+
+[dev-dependencies]
+criterion = "0.4.0"        # 基准测试
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
