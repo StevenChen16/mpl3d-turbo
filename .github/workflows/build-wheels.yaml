@@ -27,8 +27,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --interpreter ${{ format('python{0}.{1}', matrix.python-version[0], matrix.python-version[2]) }}
-          # 使用manylinux2014容器（移除container: off选项）
+          args: --release --out dist -i python${{ matrix.python-version }}
           manylinux: 2014
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -36,7 +35,7 @@ jobs:
           name: wheels-linux-${{ matrix.target }}-py${{ matrix.python-version }}
           path: dist
 
-  # Linux ARM64构建（如果需要）
+  # Linux ARM64构建
   linux-aarch64:
     runs-on: ubuntu-latest
     strategy:
@@ -51,9 +50,8 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: aarch64
-          args: --release --out dist
+          args: --release --out dist -i python${{ matrix.python-version }}
           manylinux: 2014
-          # 对于ARM64等非x86_64平台，必须使用容器
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -77,7 +75,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          args: --release --out dist --interpreter ${{ format('python{0}.{1}', matrix.python-version[0], matrix.python-version[2]) }}
+          args: --release --out dist -i python${{ matrix.python-version }}
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -103,12 +101,12 @@ jobs:
         if: matrix.target == 'x86_64'
         uses: PyO3/maturin-action@v1
         with:
-          args: --release --out dist --interpreter ${{ format('python{0}.{1}', matrix.python-version[0], matrix.python-version[2]) }}
+          args: --release --out dist -i python${{ matrix.python-version }}
       - name: Build wheels - universal2
         if: matrix.target == 'aarch64'
         uses: PyO3/maturin-action@v1
         with:
-          args: --release --out dist --universal2 --interpreter ${{ format('python{0}.{1}', matrix.python-version[0], matrix.python-version[2]) }}
+          args: --release --out dist --universal2 -i python${{ matrix.python-version }}
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
