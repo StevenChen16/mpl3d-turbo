@@ -47,7 +47,7 @@ plt.show()
 
 ## Installation
 
-### Method 1: From PyPI (coming soon)
+### Method 1: From PyPI
 
 ```bash
 pip install mpl3d-turbo

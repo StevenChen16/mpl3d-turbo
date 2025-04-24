@@ -47,7 +47,7 @@ plt.show()
 
 ## 安装方法
 
-### 方法1：从PyPI安装（即将推出）
+### 方法1：从PyPI安装
 
 ```bash
 pip install mpl3d-turbo
