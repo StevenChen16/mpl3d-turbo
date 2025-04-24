@@ -3,7 +3,7 @@
 //! This module implements functionality equivalent to Matplotlib's Poly3DCollection,
 //! for efficiently rendering large numbers of 3D polygons.
 
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use rayon::prelude::*;
 use crate::proj3d::{ProjectionMatrix, Projection};
 

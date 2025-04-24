@@ -3,9 +3,8 @@
 //! This module is equivalent to Matplotlib's `proj3d.py`,
 //! providing various projection and transformation matrices used in 3D rendering.
 
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 use ndarray::prelude::s;
-use std::f64::consts::PI;
 use rayon::prelude::*;
 
 /// 3D Projection Matrix
@@ -115,10 +114,15 @@ impl Projection {
             // Use simple parallel processing
             let chunk_size = n / rayon::current_num_threads().max(1);
             
+            // 创建中间向量以修复生命周期问题
+            let mut result_x_vec = result_x.to_vec();
+            let mut result_y_vec = result_y.to_vec();
+            let mut result_z_vec = result_z.to_vec();
+            
             // Create mutable ranges for parallel processing
-            let mut xs_chunks: Vec<_> = result_x.to_vec().chunks_mut(chunk_size).collect();
-            let mut ys_chunks: Vec<_> = result_y.to_vec().chunks_mut(chunk_size).collect();
-            let mut zs_chunks: Vec<_> = result_z.to_vec().chunks_mut(chunk_size).collect();
+            let mut xs_chunks: Vec<_> = result_x_vec.chunks_mut(chunk_size).collect();
+            let mut ys_chunks: Vec<_> = result_y_vec.chunks_mut(chunk_size).collect();
+            let mut zs_chunks: Vec<_> = result_z_vec.chunks_mut(chunk_size).collect();
             
             // Parallel iteration to process each chunk
             xs_chunks.par_iter_mut().zip(ys_chunks.par_iter_mut().zip(zs_chunks.par_iter_mut()))
@@ -189,7 +193,7 @@ impl Projection {
     }
     
     /// Projection transformation with clipping
-    pub fn proj_transform_vec_clip(
+    pub fn proj_transform_clip_vec(
         vec: &[Array1<f64>; 3], 
         m: &ProjectionMatrix,
         focal_length: f64
@@ -220,6 +224,34 @@ impl Projection {
         }
         
         (result_x, result_y, result_z, visible)
+    }
+    
+    /// Inverse projection transformation
+    pub fn inv_transform_vec(
+        vec: &[Array1<f64>; 3],
+        m: &ProjectionMatrix
+    ) -> (Array1<f64>, Array1<f64>, Array1<f64>) {
+        let n = vec[0].len();
+        let mut result_x = Array1::zeros(n);
+        let mut result_y = Array1::zeros(n);
+        let mut result_z = Array1::zeros(n);
+        
+        // 计算逆矩阵 - 由于我们没有直接的inv方法，自己实现一个简单的矩阵求逆
+        let inv_matrix = self_inverse_matrix(&m.0);
+        
+        for i in 0..n {
+            let point = [vec[0][i], vec[1][i], vec[2][i], 1.0];
+            let transformed = Self::transform_point(&point, &inv_matrix);
+            
+            let w = transformed[3];
+            if w != 0.0 {
+                result_x[i] = transformed[0] / w;
+                result_y[i] = transformed[1] / w;
+                result_z[i] = transformed[2] / w;
+            }
+        }
+        
+        (result_x, result_y, result_z)
     }
     
     /// Transform a single point
@@ -331,9 +363,65 @@ impl Projection {
     }
 }
 
+// 简单的4x4矩阵求逆实现 (替代ndarray_linalg::Inverse)
+fn self_inverse_matrix(matrix: &Array2<f64>) -> Array2<f64> {
+    // 创建单位矩阵
+    let mut result = Array2::<f64>::eye(4);
+    let mut m = matrix.clone();
+    
+    // 高斯-约旦消元
+    for i in 0..4 {
+        // 查找主元
+        let mut max_row = i;
+        let mut max_val = m[[i, i]].abs();
+        
+        for j in (i+1)..4 {
+            let val = m[[j, i]].abs();
+            if val > max_val {
+                max_row = j;
+                max_val = val;
+            }
+        }
+        
+        // 交换行
+        if max_row != i {
+            for j in 0..4 {
+                let temp = m[[i, j]];
+                m[[i, j]] = m[[max_row, j]];
+                m[[max_row, j]] = temp;
+                
+                let temp = result[[i, j]];
+                result[[i, j]] = result[[max_row, j]];
+                result[[max_row, j]] = temp;
+            }
+        }
+        
+        // 缩放行
+        let pivot = m[[i, i]];
+        for j in 0..4 {
+            m[[i, j]] /= pivot;
+            result[[i, j]] /= pivot;
+        }
+        
+        // 消除其他行
+        for j in 0..4 {
+            if j != i {
+                let factor = m[[j, i]];
+                for k in 0..4 {
+                    m[[j, k]] -= factor * m[[i, k]];
+                    result[[j, k]] -= factor * result[[i, k]];
+                }
+            }
+        }
+    }
+    
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::f64::consts::PI;
     
     #[test]
     fn test_world_transformation() {

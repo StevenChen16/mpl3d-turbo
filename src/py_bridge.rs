@@ -4,17 +4,20 @@
 //! high-performance 3D plotting capabilities to Python and Matplotlib.
 
 use pyo3::prelude::*;
-use pyo3::types::{PyList, PyTuple, PyBool};
-use numpy::{PyArray, PyReadonlyArray1, PyReadonlyArray2, PyArray1, PyArray2};
+use pyo3::types::{PyList, PyTuple};
+use numpy::{PyReadonlyArray1, PyReadonlyArray2, PyArray2};
+use numpy::ToPyArray;
+use pyo3::PyObject;  // 修复导入路径
 use crate::proj3d::{ProjectionMatrix, Projection};
 use crate::poly3d::{Poly3DCollection, ZSortMethod};
 use ndarray::{Array1, Array2};
 
+
 /// Matplotlib 3D plotting functionality implemented in Rust
 #[pymodule]
-fn mpl3d_rs(_py: Python, m: &PyModule) -> PyResult<()> {
+fn mpl3d_turbo(_py: Python, m: &PyModule) -> PyResult<()> {
     // Export version information
-    m.add("__version__", crate::VERSION)?;
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     
     // Register Python types
     m.add_class::<PyProjection>()?;
@@ -116,7 +119,7 @@ impl PyProjection {
         
         let tuple = PyTuple::new(
             py, 
-            [tx_py.into_py(py), ty_py.into_py(py), tz_py.into_py(py)]
+            [tx_py.to_object(py), ty_py.to_object(py), tz_py.to_object(py)]
         );
         Ok(tuple.into())
     }
@@ -148,9 +151,7 @@ impl PyProjection {
         
         // 执行投影
         let vec = [xs_arr, ys_arr, zs_arr];
-        let (tx, ty, tz, visible) = Projection::proj_transform_vec_clip(
-            &vec, &proj_matrix, focal_length
-        );
+        let (tx, ty, tz, visible) = Projection::proj_transform_clip_vec(&vec, &proj_matrix, focal_length);
         
         // 返回结果
         let tx_py = tx.to_pyarray(py);
@@ -160,158 +161,26 @@ impl PyProjection {
         
         let tuple = PyTuple::new(
             py, 
-            [tx_py.into_py(py), ty_py.into_py(py), tz_py.into_py(py), visible_py.into_py(py)]
+            [tx_py.to_object(py), ty_py.to_object(py), tz_py.to_object(py), visible_py.to_object(py)]
         );
         Ok(tuple.into())
     }
     
-    /// View axes calculation
+    /// Inverse projection transformation
     #[staticmethod]
-    fn view_axes(
+    fn inv_transform(
         py: Python,
-        eye_x: f64, eye_y: f64, eye_z: f64,
-        center_x: f64, center_y: f64, center_z: f64,
-        up_x: f64, up_y: f64, up_z: f64,
-        roll: f64,
+        xs: PyReadonlyArray1<f64>,
+        ys: PyReadonlyArray1<f64>,
+        zs: PyReadonlyArray1<f64>,
+        matrix: PyReadonlyArray2<f64>,
     ) -> PyResult<Py<PyTuple>> {
-        let eye = [eye_x, eye_y, eye_z];
-        let center = [center_x, center_y, center_z];
-        let up = [up_x, up_y, up_z];
+        // 从NumPy数组转换为ndarray
+        let xs_arr = Array1::from_vec(xs.as_slice()?.to_vec());
+        let ys_arr = Array1::from_vec(ys.as_slice()?.to_vec());
+        let zs_arr = Array1::from_vec(zs.as_slice()?.to_vec());
         
-        let (u, v, w) = Projection::view_axes(&eye, &center, &up, roll);
-        
-        // 转换为NumPy数组
-        let u_py = PyArray::from_slice(py, &u);
-        let v_py = PyArray::from_slice(py, &v);
-        let w_py = PyArray::from_slice(py, &w);
-        
-        let tuple = PyTuple::new(
-            py, 
-            [u_py.into_py(py), v_py.into_py(py), w_py.into_py(py)]
-        );
-        Ok(tuple.into())
-    }
-    
-    /// View transformation matrix
-    #[staticmethod]
-    fn view_transformation_uvw(
-        py: Python,
-        u_x: f64, u_y: f64, u_z: f64,
-        v_x: f64, v_y: f64, v_z: f64,
-        w_x: f64, w_y: f64, w_z: f64,
-        eye_x: f64, eye_y: f64, eye_z: f64,
-    ) -> PyResult<PyObject> {
-        let u = [u_x, u_y, u_z];
-        let v = [v_x, v_y, v_z];
-        let w = [w_x, w_y, w_z];
-        let eye = [eye_x, eye_y, eye_z];
-        
-        let matrix = Projection::view_transformation_uvw(&u, &v, &w, &eye);
-        
-        // 转换为NumPy数组
-        Ok(matrix.0.to_pyarray(py).into())
-    }
-}
-
-/// Python版本的Poly3DCollection
-#[pyclass]
-struct PyPoly3DCollection {
-    inner: Poly3DCollection,
-}
-
-#[pymethods]
-impl PyPoly3DCollection {
-    /// 创建新的3D多边形集合
-    #[new]
-    fn new(py: Python, verts: &PyList, facecolors: Option<&PyList>, edgecolors: Option<&PyList>) -> PyResult<Self> {
-        // 转换顶点列表
-        let mut vertices = Vec::new();
-        for vert in verts.iter() {
-            let vert_arr = vert.extract::<PyReadonlyArray2<f64>>()?;
-            let shape = vert_arr.shape();
-            let mut ndarray_vert = Array2::<f64>::zeros((shape[0], shape[1]));
-            
-            // 复制数据
-            for i in 0..shape[0] {
-                for j in 0..shape[1] {
-                    ndarray_vert[[i, j]] = vert_arr.get([i, j])
-                        .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-                            format!("Index out of bounds: [{}, {}]", i, j)
-                        ))?;
-                }
-            }
-            
-            vertices.push(ndarray_vert);
-        }
-        
-        // 转换面颜色
-        let face_colors = if let Some(colors) = facecolors {
-            let mut result = Vec::new();
-            for color in colors.iter() {
-                let color_tuple = color.extract::<Vec<f64>>()?;
-                if color_tuple.len() < 3 {
-                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                        "颜色必须至少有3个元素 (RGB)"
-                    ));
-                }
-                
-                let alpha = if color_tuple.len() > 3 { color_tuple[3] } else { 1.0 };
-                result.push([color_tuple[0], color_tuple[1], color_tuple[2], alpha]);
-            }
-            result
-        } else {
-            vec![[0.5, 0.5, 0.5, 1.0]] // 默认灰色
-        };
-        
-        // 转换边颜色
-        let edge_colors = if let Some(colors) = edgecolors {
-            let mut result = Vec::new();
-            for color in colors.iter() {
-                let color_tuple = color.extract::<Vec<f64>>()?;
-                if color_tuple.len() < 3 {
-                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                        "颜色必须至少有3个元素 (RGB)"
-                    ));
-                }
-                
-                let alpha = if color_tuple.len() > 3 { color_tuple[3] } else { 1.0 };
-                result.push([color_tuple[0], color_tuple[1], color_tuple[2], alpha]);
-            }
-            result
-        } else {
-            vec![[0.0, 0.0, 0.0, 1.0]] // 默认黑色
-        };
-        
-        // 创建集合
-        Ok(Self {
-            inner: Poly3DCollection::new(vertices, face_colors, edge_colors),
-        })
-    }
-    
-    /// 设置Z排序方法
-    fn set_zsort(&mut self, zsort: &str) -> PyResult<()> {
-        let method = match zsort {
-            "average" => ZSortMethod::Average,
-            "min" => ZSortMethod::Min,
-            "max" => ZSortMethod::Max,
-            _ => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                format!("无效的zsort值: {}", zsort)
-            )),
-        };
-        
-        self.inner.set_zsort(method);
-        Ok(())
-    }
-    
-    /// 设置自定义Z排序位置
-    fn set_sort_zpos(&mut self, zpos: f64) -> PyResult<()> {
-        self.inner.set_sort_zpos(zpos);
-        Ok(())
-    }
-    
-    /// 执行3D投影
-    fn do_3d_projection(&mut self, _py: Python, matrix: PyReadonlyArray2<f64>) -> PyResult<f64> {
-        // 创建投影矩阵
+        // 创建矩阵
         let matrix_arr = Array2::from_shape_vec(
             (matrix.shape()[0], matrix.shape()[1]),
             matrix.as_slice()?.to_vec()
@@ -321,15 +190,146 @@ impl PyPoly3DCollection {
         
         let proj_matrix = ProjectionMatrix(matrix_arr);
         
-        // 执行投影
-        Ok(self.inner.do_3d_projection(&proj_matrix))
+        // 执行逆投影
+        let vec = [xs_arr, ys_arr, zs_arr];
+        let (u, v, w) = Projection::inv_transform_vec(&vec, &proj_matrix);
+        
+        // 转换结果为Python对象
+        let u_py = u.to_pyarray(py);
+        let v_py = v.to_pyarray(py);
+        let w_py = w.to_pyarray(py);
+        
+        let tuple = PyTuple::new(
+            py, 
+            [u_py.to_object(py), v_py.to_object(py), w_py.to_object(py)]
+        );
+        Ok(tuple.into())
+    }
+}
+
+/// Python wrapper for Poly3DCollection
+#[pyclass]
+pub struct PyPoly3DCollection {
+    poly3d: Poly3DCollection,
+}
+
+#[pymethods]
+impl PyPoly3DCollection {
+    /// Create a new PyPoly3DCollection from vertex arrays
+    #[new]
+    fn new(
+        py: Python,
+        vertices: &PyAny,
+        facecolors: Option<&PyAny>,
+        edgecolors: Option<&PyAny>,
+    ) -> PyResult<Self> {
+        // 转换Python的多边形顶点数组为Rust对象
+        let list = vertices.downcast::<PyList>()?;
+        let mut poly_vertices = Vec::with_capacity(list.len());
+        
+        for item in list.iter() {
+            let vert_arr = item.downcast::<PyArray2<f64>>()?;
+            let shape = vert_arr.shape();
+            let mut ndarray_vert = Array2::<f64>::zeros((shape[0], shape[1]));
+            
+            // 逐元素复制数据
+            for i in 0..shape[0] {
+                for j in 0..shape[1] {
+                    // 先获取Option<&f64>，然后用?处理Option，再解引用
+                    let value = unsafe { vert_arr.get([i, j]) }
+                        .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                            format!("Index out of bounds: [{}, {}]", i, j)
+                        ))?;
+                    ndarray_vert[[i, j]] = *value;
+                }
+            }
+            
+            poly_vertices.push(ndarray_vert);
+        }
+        
+        // 转换face colors
+        let fcolors = if let Some(fc) = facecolors {
+            let fc_array = fc.downcast::<PyArray2<f64>>()?;
+            let shape = fc_array.shape();
+            let mut colors = Vec::with_capacity(shape[0]);
+            
+            for i in 0..shape[0] {
+                let mut color = [0.0; 4];
+                for j in 0..4 {
+                    if j < shape[1] {
+                        // 先获取Option<&f64>，然后用?处理Option，再解引用
+                        let value = unsafe { fc_array.get([i, j]) }
+                            .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                                format!("Facecolor index out of bounds: [{}, {}]", i, j)
+                            ))?;
+                        color[j] = *value;
+                    } else {
+                        color[j] = 1.0; // Alpha默认为1.0
+                    }
+                }
+                colors.push(color);
+            }
+            colors
+        } else {
+            vec![[0.0, 0.0, 0.0, 1.0]]
+        };
+        
+        // 转换edge colors
+        let ecolors = if let Some(ec) = edgecolors {
+            let ec_array = ec.downcast::<PyArray2<f64>>()?;
+            let shape = ec_array.shape();
+            let mut colors = Vec::with_capacity(shape[0]);
+            
+            for i in 0..shape[0] {
+                let mut color = [0.0; 4];
+                for j in 0..4 {
+                    if j < shape[1] {
+                        // 先获取Option<&f64>，然后用?处理Option，再解引用
+                        let value = unsafe { ec_array.get([i, j]) }
+                            .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                                format!("Edgecolor index out of bounds: [{}, {}]", i, j)
+                            ))?;
+                        color[j] = *value;
+                    } else {
+                        color[j] = 1.0; // Alpha默认为1.0
+                    }
+                }
+                colors.push(color);
+            }
+            colors
+        } else {
+            vec![[0.0, 0.0, 0.0, 1.0]]
+        };
+        
+        // 创建Poly3DCollection
+        let poly3d = Poly3DCollection::new(poly_vertices, fcolors, ecolors);
+        
+        Ok(PyPoly3DCollection { poly3d })
     }
     
-    /// 获取排序后的2D段
-    fn get_sorted_segments_2d(&self, py: Python) -> PyResult<Py<PyList>> {
-        let segments = self.inner.get_sorted_segments_2d();
-        let list = PyList::empty(py);
+    /// Perform 3D projection for the collection
+    fn do_3d_projection(&mut self, matrix: PyReadonlyArray2<f64>) -> PyResult<f64> {
+        // 转换矩阵
+        let matrix_arr = Array2::from_shape_vec(
+            (matrix.shape()[0], matrix.shape()[1]),
+            matrix.as_slice()?.to_vec()
+        ).map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            format!("Cannot convert matrix: {:?}", e)
+        ))?;
         
+        let proj_matrix = ProjectionMatrix(matrix_arr);
+        
+        // 执行投影
+        let z_depth = self.poly3d.do_3d_projection(&proj_matrix);
+        
+        Ok(z_depth)
+    }
+    
+    /// Get the sorted segments in 2D projection space
+    fn get_sorted_segments_2d(&self, py: Python) -> PyResult<Py<PyList>> {
+        let segments = self.poly3d.get_sorted_segments_2d();
+        
+        let list = PyList::empty(py);
         for segment in segments {
             list.append(segment.to_pyarray(py))?;
         }
@@ -338,44 +338,53 @@ impl PyPoly3DCollection {
     }
     
     /// Get sorted face colors
-    fn get_sorted_facecolors(&self, py: Python) -> PyResult<Py<PyList>> {
-        let colors = self.inner.get_sorted_facecolors();
-        let list = PyList::empty(py);
+    fn get_sorted_facecolors(&self, py: Python) -> PyResult<Py<PyArray2<f64>>> {
+        let colors = Array2::from_shape_vec(
+            (self.poly3d.facecolors.len(), 4),
+            self.poly3d.facecolors.iter().flat_map(|c| c.to_vec()).collect()
+        ).map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            format!("Cannot convert colors: {:?}", e)
+        ))?;
         
-        for color in colors {
-            let color_tuple = PyTuple::new(py, &[
-                color[0].into_py(py),
-                color[1].into_py(py),
-                color[2].into_py(py),
-                color[3].into_py(py),
-            ]);
-            list.append(color_tuple)?;
-        }
-        
-        Ok(list.into())
+        Ok(colors.to_pyarray(py).into())
     }
     
     /// Get sorted edge colors
-    fn get_sorted_edgecolors(&self, py: Python) -> PyResult<Py<PyList>> {
-        let colors = self.inner.get_sorted_edgecolors();
-        let list = PyList::empty(py);
+    fn get_sorted_edgecolors(&self, py: Python) -> PyResult<Py<PyArray2<f64>>> {
+        let colors = Array2::from_shape_vec(
+            (self.poly3d.edgecolors.len(), 4),
+            self.poly3d.edgecolors.iter().flat_map(|c| c.to_vec()).collect()
+        ).map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            format!("Cannot convert colors: {:?}", e)
+        ))?;
         
-        for color in colors {
-            let color_tuple = PyTuple::new(py, &[
-                color[0].into_py(py),
-                color[1].into_py(py),
-                color[2].into_py(py),
-                color[3].into_py(py),
-            ]);
-            list.append(color_tuple)?;
-        }
-        
-        Ok(list.into())
+        Ok(colors.to_pyarray(py).into())
     }
     
-    /// Apply lighting effects
-    fn shade_colors(&mut self, light_x: f64, light_y: f64, light_z: f64) -> PyResult<()> {
-        self.inner.shade_colors([light_x, light_y, light_z]);
+    /// Set Z-sort method
+    fn set_zsort(&mut self, zsort: &str) -> PyResult<()> {
+        let method = match zsort {
+            "average" => ZSortMethod::Average,
+            "min" => ZSortMethod::Min,
+            "max" => ZSortMethod::Max,
+            _ => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                format!("Invalid zsort method: {}", zsort)
+            )),
+        };
+        
+        self.poly3d.set_zsort(method);
+        Ok(())
+    }
+    
+    /// Set the position used for Z-sorting
+    fn set_sort_zpos(&mut self, zpos: f64) -> PyResult<()> {
+        self.poly3d.set_sort_zpos(zpos);
+        Ok(())
+    }
+    
+    /// Shade colors based on light direction
+    fn shade_colors(&mut self, x: f64, y: f64, z: f64) -> PyResult<()> {
+        self.poly3d.shade_colors([x, y, z]);
         Ok(())
     }
 }
