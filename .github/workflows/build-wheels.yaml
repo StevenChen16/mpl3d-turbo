@@ -102,11 +102,12 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           args: --release --out dist -i python${{ matrix.python-version }}
-      - name: Build wheels - universal2
+      - name: Build wheels - aarch64
         if: matrix.target == 'aarch64'
         uses: PyO3/maturin-action@v1
         with:
-          args: --release --out dist --universal2 -i python${{ matrix.python-version }}
+          target: aarch64-apple-darwin
+          args: --release --out dist -i python${{ matrix.python-version }}
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
