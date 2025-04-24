@@ -18,11 +18,11 @@ from pde import solve_pde, solve_pde_and_visualize
 
 # Try to import Rust version of visualization tools
 try:
-    from mpl3d_rs import fast_plot_surface
+    from mpl3d_turbo import fast_plot_surface
     RUST_AVAILABLE = True
 except ImportError:
     print("Warning: Rust library not compiled or cannot be imported. Using pure Python version.")
-    print("Hint: Please run 'cargo build --release' and 'python -m pip install -e python/' in rust directory")
+    print("Hint: Please run 'maturin develop --release' in the project directory")
     RUST_AVAILABLE = False
 
 def visualize_pde_with_rust(x_display, t, C_display, time_steps=5):

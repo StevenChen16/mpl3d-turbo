@@ -15,7 +15,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'python'))
 
 # Try to import Rust version of visualization tools
 try:
-    from mpl3d_rs import fast_plot_surface
+    from mpl3d_turbo import fast_plot_surface
     RUST_AVAILABLE = True
     print("Successfully imported Rust-accelerated version")
 except ImportError:

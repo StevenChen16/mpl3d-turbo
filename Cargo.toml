@@ -1,10 +1,10 @@
 [package]
-name = "mpl3d-rs"
+name = "mpl3d-turbo"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "mpl3d_rs"
+name = "mpl3d_turbo"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

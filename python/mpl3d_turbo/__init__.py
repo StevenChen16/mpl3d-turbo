@@ -1,5 +1,5 @@
 """
-mpl3d-rs: High-Performance Matplotlib 3D Rendering Library
+mpl3d-turbo: High-Performance Matplotlib 3D Rendering Library
 
 This library provides a high-performance Rust implementation of Matplotlib's mpl_toolkits.mplot3d module,
 focused on improving 3D visualization performance for PDE solution results.
@@ -19,16 +19,16 @@ from .py_fallback import py_fast_plot_surface, PyFastPoly3DCollection
 # Try to import the Rust library, but use the Python fallback if it fails
 USING_RUST = False
 try:
-    from . import mpl3d_rs  # Import Rust library
+    from . import mpl3d_turbo  # Import Rust library
     USING_RUST = True
-    print("Successfully loaded Rust implementation of mpl3d_rs")
+    print("Successfully loaded Rust implementation of mpl3d_turbo")
 except ImportError:
-    print("Using Python fallback implementation for mpl3d_rs")
+    print("Using Python fallback implementation for mpl3d_turbo")
     # Will use the Python fallback implementation
 
 __version__ = "0.1.0"
 if USING_RUST:
-    __version__ = getattr(mpl3d_rs, "__version__", "0.1.0")
+    __version__ = getattr(mpl3d_turbo, "__version__", "0.1.0")
 
 
 class FastPoly3DCollection(PolyCollection):
@@ -56,7 +56,7 @@ class FastPoly3DCollection(PolyCollection):
         
         if USING_RUST:
             # 使用Rust实现
-            self._rs_collection = mpl3d_rs.PyPoly3DCollection(
+            self._rs_collection = mpl3d_turbo.PyPoly3DCollection(
                 verts,
                 self.get_facecolor(),
                 self.get_edgecolor()
